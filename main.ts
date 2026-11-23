@@ -44,33 +44,57 @@ scene.add(ground);
 // --- World: Simple City (Blocks & Roads) ---
 function createCity() {
     // Roads (X and Z axis)
-    const roadMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    const roadMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
     for (let i = -5; i <= 5; i++) {
-        const roadX = new THREE.Mesh(new THREE.PlaneGeometry(CITY_SIZE, 10), roadMat);
+        const roadX = new THREE.Mesh(new THREE.PlaneGeometry(CITY_SIZE, 12), roadMat);
         roadX.rotation.x = -Math.PI / 2;
         roadX.position.y = 0.01;
         roadX.position.z = i * 100;
         scene.add(roadX);
 
-        const roadZ = new THREE.Mesh(new THREE.PlaneGeometry(10, CITY_SIZE), roadMat);
+        // Dashed lines
+        const lineGeo = new THREE.PlaneGeometry(2, 0.5);
+        const lineMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+        for (let j = -CITY_SIZE / 2; j < CITY_SIZE / 2; j += 10) {
+            const line = new THREE.Mesh(lineGeo, lineMat);
+            line.rotation.x = -Math.PI / 2;
+            line.position.set(j, 0.02, i * 100);
+            scene.add(line);
+        }
+
+        const roadZ = new THREE.Mesh(new THREE.PlaneGeometry(12, CITY_SIZE), roadMat);
         roadZ.rotation.x = -Math.PI / 2;
         roadZ.position.y = 0.01;
         roadZ.position.x = i * 100;
         scene.add(roadZ);
     }
 
-    const boxGeo = new THREE.BoxGeometry(20, 50, 20);
-    for (let i = 0; i < 200; i++) {
-        const buildingMat = new THREE.MeshStandardMaterial({ color: Math.random() * 0xffffff });
+    for (let i = 0; i < 250; i++) {
+        const h = 20 + Math.random() * 60;
+        const w = 15 + Math.random() * 10;
+        const boxGeo = new THREE.BoxGeometry(w, h, w);
+        const buildingMat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(Math.random(), 0.2, 0.4) });
         const building = new THREE.Mesh(boxGeo, buildingMat);
+        
         let x = (Math.random() - 0.5) * CITY_SIZE * 0.9;
         let z = (Math.random() - 0.5) * CITY_SIZE * 0.9;
-        // Avoid roads
-        if (Math.abs(x % 100) < 15) x += 20;
-        if (Math.abs(z % 100) < 15) z += 20;
+        if (Math.abs(x % 100) < 20) x += 30;
+        if (Math.abs(z % 100) < 20) z += 30;
 
-        building.position.set(x, 25, z);
+        building.position.set(x, h / 2, z);
         scene.add(building);
+
+        // Simple windows
+        const windowGeo = new THREE.PlaneGeometry(w * 0.8, h * 0.8);
+        const windowMat = new THREE.MeshBasicMaterial({ color: 0xffffaa, transparent: true, opacity: 0.3 });
+        for (let side = 0; side < 4; side++) {
+            const win = new THREE.Mesh(windowGeo, windowMat);
+            if (side === 0) win.position.set(0, 0, w / 2 + 0.1);
+            if (side === 1) { win.position.set(0, 0, -w / 2 - 0.1); win.rotation.y = Math.PI; }
+            if (side === 2) { win.position.set(w / 2 + 0.1, 0, 0); win.rotation.y = Math.PI / 2; }
+            if (side === 3) { win.position.set(-w / 2 - 0.1, 0, 0); win.rotation.y = -Math.PI / 2; }
+            building.add(win);
+        }
     }
 }
 createCity();
@@ -78,23 +102,46 @@ createCity();
 // --- Car Factory ---
 function createCar(color: number, isPolice = false) {
     const group = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 4), new THREE.MeshStandardMaterial({ color }));
-    body.position.y = 0.5;
+    
+    // Main Body
+    const body = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.8, 4.5), new THREE.MeshStandardMaterial({ color }));
+    body.position.y = 0.6;
     group.add(body);
 
+    // Cabin
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.6, 2), new THREE.MeshStandardMaterial({ color: color }));
+    cabin.position.set(0, 1.2, -0.2);
+    group.add(cabin);
+
+    // Windows
+    const winMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const windshield = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.5), winMat);
+    windshield.position.set(0, 1.2, 0.81);
+    group.add(windshield);
+
     if (isPolice) {
-        const siren = new THREE.Mesh(new THREE.BoxGeometry(1, 0.2, 0.5), new THREE.MeshStandardMaterial({ color: 0x0000ff }));
-        siren.position.y = 1.1;
+        const siren = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.2, 0.4), new THREE.MeshStandardMaterial({ color: 0x0000ff }));
+        siren.position.y = 1.6;
         group.add(siren);
         
-        const sirenLight = new THREE.PointLight(0xff0000, 1, 10);
-        sirenLight.position.y = 1.2;
+        const sirenLight = new THREE.PointLight(0xff0000, 2, 15);
+        sirenLight.position.y = 1.7;
         group.add(sirenLight);
     }
 
-    const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.5, 16);
+    // Headlights
+    const lightGeo = new THREE.CircleGeometry(0.3, 16);
+    const lightMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
+    const h1 = new THREE.Mesh(lightGeo, lightMat);
+    h1.position.set(0.7, 0.6, 2.26);
+    group.add(h1);
+    const h2 = new THREE.Mesh(lightGeo, lightMat);
+    h2.position.set(-0.7, 0.6, 2.26);
+    group.add(h2);
+
+    const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.6, 16);
     const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-    [[ -1.1, 0.4, 1.5 ], [ 1.1, 0.4, 1.5 ], [ -1.1, 0.4, -1.5 ], [ 1.1, 0.4, -1.5 ]].forEach(pos => {
+    [[ -1.1, 0.5, 1.4 ], [ 1.1, 0.5, 1.4 ], [ -1.1, 0.5, -1.4 ], [ 1.1, 0.5, -1.4 ]].forEach(pos => {
         const wheel = new THREE.Mesh(wheelGeo, wheelMat);
         wheel.rotation.z = Math.PI / 2;
         wheel.position.set(pos[0], pos[1], pos[2]);
@@ -102,6 +149,7 @@ function createCar(color: number, isPolice = false) {
     });
     return group;
 }
+
 
 const carGroup = createCar(0xff0000);
 scene.add(carGroup);
