@@ -12,11 +12,14 @@ const state = {
     carVelocity: new THREE.Vector3(),
     carRotation: 0,
     wantedLevel: 0,
+    policeCars: [] as THREE.Group[],
+    policeVelocities: [] as THREE.Vector3[],
 };
 
 // --- Initialization ---
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb); // Sky blue
+scene.fog = new THREE.FogExp2(0x87ceeb, 0.002);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -38,45 +41,78 @@ const ground = new THREE.Mesh(groundGeo, groundMat);
 ground.rotation.x = -Math.PI / 2;
 scene.add(ground);
 
-// --- World: Simple City (Blocks) ---
+// --- World: Simple City (Blocks & Roads) ---
 function createCity() {
+    // Roads (X and Z axis)
+    const roadMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    for (let i = -5; i <= 5; i++) {
+        const roadX = new THREE.Mesh(new THREE.PlaneGeometry(CITY_SIZE, 10), roadMat);
+        roadX.rotation.x = -Math.PI / 2;
+        roadX.position.y = 0.01;
+        roadX.position.z = i * 100;
+        scene.add(roadX);
+
+        const roadZ = new THREE.Mesh(new THREE.PlaneGeometry(10, CITY_SIZE), roadMat);
+        roadZ.rotation.x = -Math.PI / 2;
+        roadZ.position.y = 0.01;
+        roadZ.position.x = i * 100;
+        scene.add(roadZ);
+    }
+
     const boxGeo = new THREE.BoxGeometry(20, 50, 20);
-    const boxMat = new THREE.MeshStandardMaterial({ color: 0x888888 });
-    
-    for (let i = 0; i < 100; i++) {
-        const building = new THREE.Mesh(boxGeo, boxMat);
-        building.position.x = (Math.random() - 0.5) * CITY_SIZE * 0.8;
-        building.position.z = (Math.random() - 0.5) * CITY_SIZE * 0.8;
-        building.position.y = 25;
+    for (let i = 0; i < 200; i++) {
+        const buildingMat = new THREE.MeshStandardMaterial({ color: Math.random() * 0xffffff });
+        const building = new THREE.Mesh(boxGeo, buildingMat);
+        let x = (Math.random() - 0.5) * CITY_SIZE * 0.9;
+        let z = (Math.random() - 0.5) * CITY_SIZE * 0.9;
+        // Avoid roads
+        if (Math.abs(x % 100) < 15) x += 20;
+        if (Math.abs(z % 100) < 15) z += 20;
+
+        building.position.set(x, 25, z);
         scene.add(building);
     }
 }
 createCity();
 
-// --- Player Car ---
-const carGroup = new THREE.Group();
-const bodyGeo = new THREE.BoxGeometry(2, 1, 4);
-const bodyMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-const body = new THREE.Mesh(bodyGeo, bodyMat);
-body.position.y = 0.5;
-carGroup.add(body);
+// --- Car Factory ---
+function createCar(color: number, isPolice = false) {
+    const group = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 4), new THREE.MeshStandardMaterial({ color }));
+    body.position.y = 0.5;
+    group.add(body);
 
-// Wheels
-const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.5, 16);
-const wheelMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
-const wheelPositions = [
-    [-1.1, 0.4, 1.5], [1.1, 0.4, 1.5],
-    [-1.1, 0.4, -1.5], [1.1, 0.4, -1.5]
-];
-wheelPositions.forEach(pos => {
-    const wheel = new THREE.Mesh(wheelGeo, wheelMat);
-    wheel.rotation.z = Math.PI / 2;
-    wheel.position.set(pos[0], pos[1], pos[2]);
-    carGroup.add(wheel);
-});
+    if (isPolice) {
+        const siren = new THREE.Mesh(new THREE.BoxGeometry(1, 0.2, 0.5), new THREE.MeshStandardMaterial({ color: 0x0000ff }));
+        siren.position.y = 1.1;
+        group.add(siren);
+        
+        const sirenLight = new THREE.PointLight(0xff0000, 1, 10);
+        sirenLight.position.y = 1.2;
+        group.add(sirenLight);
+    }
 
+    const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.5, 16);
+    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+    [[ -1.1, 0.4, 1.5 ], [ 1.1, 0.4, 1.5 ], [ -1.1, 0.4, -1.5 ], [ 1.1, 0.4, -1.5 ]].forEach(pos => {
+        const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+        wheel.rotation.z = Math.PI / 2;
+        wheel.position.set(pos[0], pos[1], pos[2]);
+        group.add(wheel);
+    });
+    return group;
+}
+
+const carGroup = createCar(0xff0000);
 scene.add(carGroup);
-camera.position.set(0, 10, 20);
+
+function spawnPolice() {
+    const p = createCar(0xffffff, true);
+    p.position.set(carGroup.position.x + 50, 0, carGroup.position.z + 50);
+    scene.add(p);
+    state.policeCars.push(p);
+    state.policeVelocities.push(new THREE.Vector3());
+}
 
 // --- Controls ---
 window.addEventListener('keydown', (e) => state.keys[e.key.toLowerCase()] = true);
@@ -95,16 +131,24 @@ miniMapCanvas.height = 150;
 function updateMiniMap() {
     if (!miniMapCtx) return;
     miniMapCtx.clearRect(0, 0, 150, 150);
-    miniMapCtx.fillStyle = '#333';
+    miniMapCtx.fillStyle = 'rgba(0,0,0,0.7)';
     miniMapCtx.fillRect(0, 0, 150, 150);
     
-    // Player on minimap
-    const px = (carGroup.position.x / CITY_SIZE + 0.5) * 150;
-    const pz = (carGroup.position.z / CITY_SIZE + 0.5) * 150;
+    const worldToMap = (val: number) => (val / CITY_SIZE + 0.5) * 150;
+    
+    // Player
     miniMapCtx.fillStyle = 'red';
     miniMapCtx.beginPath();
-    miniMapCtx.arc(px, pz, 3, 0, Math.PI * 2);
+    miniMapCtx.arc(worldToMap(carGroup.position.x), worldToMap(carGroup.position.z), 3, 0, Math.PI * 2);
     miniMapCtx.fill();
+
+    // Police
+    miniMapCtx.fillStyle = 'blue';
+    state.policeCars.forEach(p => {
+        miniMapCtx.beginPath();
+        miniMapCtx.arc(worldToMap(p.position.x), worldToMap(p.position.z), 2, 0, Math.PI * 2);
+        miniMapCtx.fill();
+    });
 }
 
 // --- Game Loop ---
@@ -130,6 +174,42 @@ function animate() {
     state.carVelocity.multiplyScalar(CAR_FRICTION);
     carGroup.position.add(state.carVelocity);
     carGroup.rotation.y = state.carRotation;
+
+    // Wanted Logic
+    if (speed > 20 && Math.random() < 0.01 && state.wantedLevel < 5) {
+        state.wantedLevel++;
+        if (wantedEl) wantedEl.innerText = `WANTED: ${state.wantedLevel}`;
+        spawnPolice();
+    }
+
+    // Police AI
+    state.policeCars.forEach((p, i) => {
+        const dir = carGroup.position.clone().sub(p.position).normalize();
+        state.policeVelocities[i].add(dir.multiplyScalar(0.3));
+        state.policeVelocities[i].multiplyScalar(0.96);
+        p.position.add(state.policeVelocities[i]);
+        p.lookAt(carGroup.position);
+        
+        // Flashing sirens
+        const siren = p.children[1] as THREE.Mesh;
+        if (siren) {
+            (siren.material as THREE.MeshStandardMaterial).color.setHex(Date.now() % 500 < 250 ? 0xff0000 : 0x0000ff);
+        }
+
+        // Catch player
+        if (p.position.distanceTo(carGroup.position) < 3) {
+            state.wantedLevel = 0;
+            if (wantedEl) wantedEl.innerText = `BUSTED!`;
+            carGroup.position.set(0, 0, 0);
+            state.carVelocity.set(0, 0, 0);
+            setTimeout(() => {
+                state.policeCars.forEach(pc => scene.remove(pc));
+                state.policeCars = [];
+                state.policeVelocities = [];
+                if (wantedEl) wantedEl.innerText = `WANTED: 0`;
+            }, 2000);
+        }
+    });
 
     // Camera follow
     const camOffset = new THREE.Vector3(0, 5, 15).applyAxisAngle(new THREE.Vector3(0, 1, 0), state.carRotation);
